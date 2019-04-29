@@ -72,7 +72,6 @@ class OctConv(layers.Layer):
         self.filter_names = ['hh', 'hl', 'lh', 'll']
 
     def build(self, input_shape):
-        print("input_shape type:", type(input_shape))
         if self.data_format == 'channels_first':
             channel_axis = 1
         else:
@@ -89,7 +88,7 @@ class OctConv(layers.Layer):
 
 
         input_dim = int(hr_shape[channel_axis])
-        print('Input dim:', input_dim)
+        #print('Input dim:', input_dim)
         kernel_shapes = [self.kernel_size + (input_dim, self.hr_filters), 
                          self.kernel_size + (input_dim, self.lr_filters), 
                          self.kernel_size + (input_dim, self.hr_filters), 
@@ -135,10 +134,10 @@ class OctConv(layers.Layer):
             else:
                 self.biases[k] = None
 
-        print('Kernel shapes:', [(f, k.get_shape().as_list()) if k is not None else None for f, k in self.kernels.items()])
-        print('Bias shapes:', [(f, b.get_shape().as_list()) if b is not None else None for f, b in self.biases.items()])
-        print('Rank:', self.rank)
-        print('Input Shapes:', hr_shape, lr_shape)
+        #print('Kernel shapes:', [(f, k.get_shape().as_list()) if k is not None else None for f, k in self.kernels.items()])
+        #print('Bias shapes:', [(f, b.get_shape().as_list()) if b is not None else None for f, b in self.biases.items()])
+        #print('Rank:', self.rank)
+        #print('Input Shapes:', hr_shape, lr_shape)
 
         self._upsample_op = lambda x: upsample_nn(x, 
                                                   factor=2, 
