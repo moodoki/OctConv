@@ -77,7 +77,7 @@ class OctConv(layers.Layer):
         else:
             channel_axis = -1
 
-        if isinstance(input_shape, tuple):
+        if isinstance(input_shape, list):
             hr_shape = tf.TensorShape(input_shape[0])
             lr_shape = tf.TensorShape(input_shape[1])
         else:
@@ -170,7 +170,7 @@ class OctConv(layers.Layer):
         self.built = True
 
     def call(self, xx):
-        x_h, x_l = xx if isinstance(xx, tuple) else (xx, None)
+        x_h, x_l = xx if isinstance(xx, list) else (xx, None)
 
         if x_h is not None:
             y_h = self._conv_ops['hh'](x_h, self.kernels['hh']) if self._conv_ops['hh'] else 0
@@ -187,7 +187,7 @@ class OctConv(layers.Layer):
             y_h = self.activation(y_h)
             y_l = self.activation(y_l)
 
-        return y_h, y_l
+        return [y_h, y_l]
     
     def _compute_causal_padding(self):
         """Calculates padding for 'causal' option for 1-d conv layers."""
@@ -222,7 +222,7 @@ class OctConv(layers.Layer):
         return dict(list(base_config,items()) + list(config.items()))
 
     def compute_output_shape(self, input_shape):
-        if isinstance(input_shape, tuple):
+        if isinstance(input_shape, list):
             return (compute_output_shape_single_res(ii) for ii in input_shape)
         return compute_output_shape_single_res(input_shape)
 

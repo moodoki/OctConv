@@ -47,6 +47,37 @@ class TestOctConv2D(unittest.TestCase):
         self.assertTrue(net_h.shape, tf.TensorShape([32, 64, 64, 5]))
         self.assertTrue(net_l.shape, tf.TensorShape([32, 32, 32, 5]))
 
+    def test_simpledeepnet_creation_deeper(self):
+        x = tf.placeholder(tf.float32, [None, 64, 64, 2])
+        x = OctConv2D(filters=10, 
+                      kernel_size=3,
+                      padding='same',
+                      alpha = 0.5
+                     )(x)
+        net_h, net_l = OctConv2D(filters=10, 
+                                 kernel_size=3,
+                                 padding='same',
+                                 alpha = 0.5
+                                )(x)
+        self.assertTrue(net_h.shape.as_list() == [None, 64, 64, 5])
+        self.assertTrue(net_l.shape.as_list() == [None, 32, 32, 5])
+
+    def test_simpledeepnet_creation_keras(self):
+        x = tf.keras.layers.Input((64, 64, 2))
+        x = OctConv2D(filters=10, 
+                      kernel_size=3,
+                      padding='same',
+                      alpha = 0.5
+                     )(x)
+        net_h, net_l = OctConv2D(filters=10, 
+                                 kernel_size=3,
+                                 padding='same',
+                                 alpha = 0.5
+                                )(x)
+        self.assertTrue(net_h.shape.as_list() == [None, 64, 64, 5])
+        self.assertTrue(net_l.shape.as_list() == [None, 32, 32, 5])
+
+
 class TestOctConv3D(unittest.TestCase):
 
     def test_simpledeepnet_creation(self):
