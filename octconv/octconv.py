@@ -255,6 +255,48 @@ class OctConv(layers.Layer):
         return tensor_shape.TensorShape([input_shape[0], self.filters] +
                                                 new_space)
 
+class OctConv3D(OctConv):
+    """docstring for OctConv3D"""
+    def __init__(self,
+                 filters,
+                 kernel_size,
+                 alpha=0.5,
+                 strides=1,
+                 padding='valid',
+                 data_format='channels_last',
+                 dilation_rate=1,
+                 activation=None,
+                 use_bias=True,
+                 kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros',
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None,
+                 kernel_constraint=None,
+                 bias_constraint=None,
+                 **kwargs
+                ):
+        super(OctConv3D, self).__init__(
+            rank=3,
+            filters=filters,
+            kernel_size=kernel_size,
+            alpha=alpha,
+            strides=strides,
+            padding=padding,
+            data_format=data_format,
+            dilation_rate=dilation_rate,
+            activation=activations.get(activation),
+            use_bias=use_bias,
+            kernel_initializer=initializers.get(kernel_initializer),
+            bias_initializer=initializers.get(bias_initializer),
+            kernel_regularizer=regularizers.get(kernel_regularizer),
+            bias_regularizer=regularizers.get(bias_regularizer),
+            activity_regularizer=regularizers.get(activity_regularizer),
+            kernel_constraint=constraints.get(kernel_constraint),
+            bias_constraint=constraints.get(bias_constraint),
+            **kwargs)
+
+
 class OctConv2D(OctConv):
     """docstring for OctConv2D"""
     def __init__(self,

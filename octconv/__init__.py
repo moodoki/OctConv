@@ -1,1 +1,1 @@
-from .octconv import OctConv2D, OctConv1D
+from .octconv import OctConv3D, OctConv2D, OctConv1D
