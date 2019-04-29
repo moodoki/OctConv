@@ -219,7 +219,7 @@ class OctConv(layers.Layer):
         }
 
         base_config = super(OctConv, self).get_config()
-        return dict(list(base_config,items()) + list(config.items()))
+        return dict(list(base_config.items()) + list(config.items()))
 
     def compute_output_shape(self, input_shape):
         if isinstance(input_shape, list):
