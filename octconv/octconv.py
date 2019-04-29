@@ -218,7 +218,7 @@ class OctConv(layers.Layer):
             'bias_constraint': constraints.serialize(self.bias_constraint),
         }
 
-        base_config = super(Conv, self).get_config()
+        base_config = super(OctConv, self).get_config()
         return dict(list(base_config,items()) + list(config.items()))
 
     def compute_output_shape(self, input_shape):
