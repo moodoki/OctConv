@@ -5,10 +5,12 @@ from tensorflow.keras import initializers
 from tensorflow.keras import constraints
 from tensorflow.keras import activations
 from tensorflow.python.keras.utils import conv_utils
+from tensorflow.python.ops import nn
 from tensorflow.python.ops import nn_ops
 from tensorflow.keras.backend import repeat_elements
+import tensorflow.keras.backend as K
 
-def upsample_nn(x, factor=2, data_format='channels_last'):
+def _upsample_nn(x, factor=2, data_format='channels_last'):
     end_ax = len(x.shape)
     if data_format == 'channels_last':
         end_ax -= 1
@@ -20,6 +22,20 @@ def upsample_nn(x, factor=2, data_format='channels_last'):
     for ax in range(start_ax, end_ax):
         output = repeat_elements(output, factor, axis=ax)
     return output
+
+def _upsample_nn_shape(input_shape, factor, data_format='channels_last'):
+    assert data_format in ['channels_last', 'channels_first']
+    output_shape = [input_shape[0]] + list(map(lambda x: x*factor, input_shape[1:]))
+    if data_format == 'channels_last':
+        output_shape[-1] = input_shape[-1]
+    else:
+        output_shape[1] = input_shape[1]
+    return output_shape
+
+def UpSampleNN(factor=2, data_format='channels_last'):
+    return layers.Lambda(lambda x: _upsample_nn(x, factor, data_format),
+                         lambda x: _upsample_nn_shape(x, factor, data_format),
+                        )
 
 class OctConv(layers.Layer):
     def __init__(self, rank,
@@ -71,6 +87,16 @@ class OctConv(layers.Layer):
         self.use_bias = use_bias
         self.filter_names = ['hh', 'hl', 'lh', 'll']
 
+    def _compute_lr_shape(self, hr_shape):
+        if self.data_format == 'channels_first':
+            channel_axis = 1
+        else:
+            channel_axis = -1
+
+        lr_shape = [hr_shape[0]] + list(map(lambda x: x//2, hr_shape[1:]))
+        lr_shape[channel_axis] = hr_shape[channel_axis]
+        return tf.TensorShape(lr_shape)
+
     def build(self, input_shape):
         if self.data_format == 'channels_first':
             channel_axis = 1
@@ -80,18 +106,17 @@ class OctConv(layers.Layer):
         if isinstance(input_shape, list):
             hr_shape = tf.TensorShape(input_shape[0])
             lr_shape = tf.TensorShape(input_shape[1])
+            in_shapes = [hr_shape, lr_shape, lr_shape, lr_shape]
         else:
             hr_shape = tf.TensorShape(input_shape)
-            lr_shape = [input_shape[0]] + list(map(lambda x: x//2, input_shape[1:]))
-            lr_shape[channel_axis] = input_shape[channel_axis]
-            lr_shape = tf.TensorShape(lr_shape)
+            lr_shape = self._compute_lr_shape(hr_shape)
+            in_shapes = [hr_shape, lr_shape, None, None]
 
 
         input_dim = int(hr_shape[channel_axis])
-        #print('Input dim:', input_dim)
-        kernel_shapes = [self.kernel_size + (input_dim, self.hr_filters), 
-                         self.kernel_size + (input_dim, self.lr_filters), 
-                         self.kernel_size + (input_dim, self.hr_filters), 
+        kernel_shapes = [self.kernel_size + (input_dim, self.hr_filters),
+                         self.kernel_size + (input_dim, self.lr_filters),
+                         self.kernel_size + (input_dim, self.hr_filters),
                          self.kernel_size + (input_dim, self.lr_filters),
                         ]
         #4 Kernels and (optional) biases weights
@@ -122,73 +147,92 @@ class OctConv(layers.Layer):
             padding=op_padding.upper(),
             data_format=conv_utils.convert_data_format(self.data_format,
                                                        self.rank + 2))
-        in_shapes = [hr_shape, lr_shape, lr_shape, lr_shape]
         self.kernels = {}
         self.biases = {}
         self._conv_ops = {}
         for k, f, ii in zip(self.filter_names, kernel_shapes, in_shapes):
-            self.kernels[k] = add_kernel_weights(k, f) if f[-1] > 0 else None
-            self._conv_ops[k] = create_conv_op(ii, self.kernels[k].get_shape()) if f[-1] > 0 else None
-            if self.use_bias:
-                self.biases[k] = add_bias_weights(k, f[-1]) if f[-1] > 0 else None
+            if ii is not None:
+                self.kernels[k] = add_kernel_weights(k, f) if f[-1] > 0 else None
+                self._conv_ops[k] = create_conv_op(ii, self.kernels[k].get_shape()) if f[-1] > 0 else None
+                if self.use_bias:
+                    self.biases[k] = add_bias_weights(k, f[-1]) if f[-1] > 0  else None
+                else:
+                    self.biases[k] = None
             else:
+                self.kernels[k] = None
+                self._conv_ops[k] = None
                 self.biases[k] = None
 
-        #print('Kernel shapes:', [(f, k.get_shape().as_list()) if k is not None else None for f, k in self.kernels.items()])
-        #print('Bias shapes:', [(f, b.get_shape().as_list()) if b is not None else None for f, b in self.biases.items()])
-        #print('Rank:', self.rank)
-        #print('Input Shapes:', hr_shape, lr_shape)
-
-        self._upsample_op = lambda x: upsample_nn(x, 
-                                                  factor=2, 
-                                                  data_format=self.data_format)
+        self._upsample_op = UpSampleNN(factor=2,
+                                       data_format=self.data_format)
         self._downsample_op = lambda x: tf.nn.pool(
-            x, 
+            x,
             window_shape=[2]*self.rank,
             pooling_type='AVG',
             padding='VALID',
             strides=[2]*self.rank,
-            data_format=conv_utils.convert_data_format(self.data_format, 
+            data_format=conv_utils.convert_data_format(self.data_format,
                                                        self.rank+2))
-        #self._hh_conv_op = nn_ops.Convolution(
-        #    hr_shape,
-        #    filter_shape=self.kernels['hh'].get_shape(),
-        #    dilation_rate=self.dilation_rate,
-        #    strides=self.strides,
-        #    padding=op_padding.upper(),
-        #    data_format=conv_utils.convert_data_format(self.data_format,
-        #                                               self.rank + 2))
-        #self._ll_conv_op = nn_ops.Convolution(
-        #    lr_shape,
-        #    filter_shape=self.kernels['ll'].get_shape(),
-        #    dilation_rate=self.dilation_rate,
-        #    strides=self.strides,
-        #    padding=op_padding.upper(),
-        #    data_format=conv_utils.convert_data_format(self.data_format,
-        #                                               self.rank + 2))
+        #self.built = True
+        super().build(input_shape)
 
-        self.built = True
+    def _conv_add_bias(self, inputs, fname):
+        """Returns None if filter or xx isn't defined,
+        convolve x with specified filter and add bias if bias is used"""
+        if inputs == None or self._conv_ops[fname] == None:
+            return None
+
+        outputs = self._conv_ops[fname](inputs, self.kernels[fname])
+
+        if fname[-1] == 'h':
+            filters = self.hr_filters
+        else:
+            filters = self.lr_filters
+
+        if self.use_bias:
+            if self.data_format == 'channels_first':
+                if self.rank == 1:
+                    # nn.bias_add does not accept a 1D input tensor.
+                    bias = array_ops.reshape(self.biases[fname], (1, filters, 1))
+                    outputs += bias
+                if self.rank == 2:
+                    outputs = nn.bias_add(outputs, self.biases[fname], data_format='NCHW')
+                if self.rank == 3:
+                    # As of Mar 2017, direct addition is significantly slower than
+                    # bias_add when computing gradients. To use bias_add, we collapse Z
+                    # and Y into a single dimension to obtain a 4D input tensor.
+                    outputs_shape = outputs.shape.as_list()
+                    if outputs_shape[0] is None:
+                        outputs_shape[0] = -1
+                    outputs_4d = array_ops.reshape(outputs,
+                                                   [outputs_shape[0], outputs_shape[1],
+                                                    outputs_shape[2] * outputs_shape[3],
+                                                    outputs_shape[4]])
+                    outputs_4d = nn.bias_add(outputs_4d, self.biases[fname], data_format='NCHW')
+                    outputs = array_ops.reshape(outputs_4d, outputs_shape)
+            else:
+                outputs = nn.bias_add(outputs, self.biases[fname], data_format='NHWC')
+        return outputs
 
     def call(self, xx):
         x_h, x_l = xx if isinstance(xx, list) else (xx, None)
 
-        if x_h is not None:
-            y_h = self._conv_ops['hh'](x_h, self.kernels['hh']) if self._conv_ops['hh'] else 0
-            y_l = self._downsample_op(x_h)
-            y_l = self._conv_ops['hl'](y_l, self.kernels['hl']) if self._conv_ops['hl'] else 0
+        y_h = self._conv_add_bias(x_h, 'hh')
+        y_l = self._downsample_op(x_h)
+        y_l = self._conv_add_bias(y_l, 'hl')
 
-        if x_l is not None:
-            y_l += self._conv_ops['ll'](x_l, self.kernels['ll']) if self._conv_ops['ll'] else 0
-            if self._conv_ops['lh']:
-                y_lh = self._conv_ops['lh'](x_l, self.kernels['lh'])
-                y_h += self._upsample_op(y_lh) 
+        y_ll = self._conv_add_bias(x_l, 'll')
+        y_l = y_l + y_ll if y_ll is not None else y_l
+
+        y_lh = self._conv_add_bias(x_l, 'lh')
+        y_h = y_h + self._upsample_op(y_lh) if y_lh is not None else y_h
 
         if self.activation:
             y_h = self.activation(y_h)
             y_l = self.activation(y_l)
 
         return [y_h, y_l]
-    
+
     def _compute_causal_padding(self):
         """Calculates padding for 'causal' option for 1-d conv layers."""
         left_pad = self.dilation_rate[0] * (self.kernel_size[0] - 1)
@@ -223,8 +267,12 @@ class OctConv(layers.Layer):
 
     def compute_output_shape(self, input_shape):
         if isinstance(input_shape, list):
-            return (compute_output_shape_single_res(ii) for ii in input_shape)
-        return compute_output_shape_single_res(input_shape)
+            return list([compute_output_shape_single_res(ii) for ii in input_shape])
+
+        lr_shape = self._compute_lr_shape(input_shape)
+
+        return [compute_output_shape_single_res(input_shape),
+                compute_output_shape_single_res(lr_shape)]
 
     def compute_output_shape_single_res(self, input_shape):
         input_shape = tensor_shape.TensorShape(input_shape).as_list()
